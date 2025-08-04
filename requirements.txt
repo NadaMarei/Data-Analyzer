@@ -1,5 +1,8 @@
 PyMuPDF
 reportlab
+PyMuPDF
+reportlab
+streamlit  # Add other dependencies if needed
 nltk
 openpyxl
 

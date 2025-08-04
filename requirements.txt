@@ -3,6 +3,7 @@ reportlab
 PyMuPDF
 reportlab
 streamlit  # Add other dependencies if needed
+scikit-learn
 nltk
 openpyxl
 

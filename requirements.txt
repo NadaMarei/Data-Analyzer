@@ -1,2 +1,6 @@
 PyMuPDF
 reportlab
+sklearn
+nltk
+openpyxl
+

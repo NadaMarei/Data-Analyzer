@@ -319,7 +319,7 @@ def generate_excel_report(summary_data, file_analysis_data, word_counts):
     for report in word_counts['reports']:
         stats_data.append(["Company Report", report['name'], report['word_count']])
     
-    stats_data.append(["Total", f"{len(word_counts['reports']} Reports", word_counts['total_report_words']])
+    stats_data.append(["Total", f"{len(word_counts['reports'])} Reports", word_counts['total_report_words']])
     
     # Add data to sheet
     for row in stats_data:

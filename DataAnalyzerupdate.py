@@ -22,7 +22,6 @@ import traceback
 import os
 import tempfile
 import time
-import shutil
 
 # Improved NLTK resource handling
 def setup_nltk_resources():
@@ -229,7 +228,7 @@ def count_word_frequencies(text, word_list, word_embeddings=None, use_synonyms=F
     
     return frequencies
 
-def generate_pdf_report(summary_data, file_analysis_data, word_counts):
+def generate_pdf_report(summary_data, file_analysis_data, word_counts, target_words):
     """Generate professional PDF report in memory"""
     buffer = io.BytesIO()
     doc = SimpleDocTemplate(buffer, pagesize=landscape(letter))
@@ -283,16 +282,21 @@ def generate_pdf_report(summary_data, file_analysis_data, word_counts):
     
     elements.append(Spacer(1, 24))
     
-    # Summary table
+    # Summary table - PRESERVE USER'S WORD ORDER
     elements.append(Paragraph("Summary Report", styles['Heading2']))
     elements.append(Spacer(1, 8))
     
-    # Prepare summary table data
+    # Prepare summary table data in the original word order
     summary_table_data = [["Target Word", "Frequency Count", "Percentage"]]
-    for row in summary_data:
-        summary_table_data.append([row["Target Word"], 
-                                 str(row["Frequency Count"]), 
-                                 f"{row['Percentage']:.2f}%"])
+    for word in target_words:
+        # Find the matching summary data for this word
+        word_data = next((item for item in summary_data if item["Target Word"] == word), None)
+        if word_data:
+            summary_table_data.append([
+                word_data["Target Word"], 
+                str(word_data["Frequency Count"]), 
+                f"{word_data['Percentage']:.2f}%"
+            ])
     
     # Create summary table
     summary_table = Table(summary_table_data)
@@ -314,24 +318,27 @@ def generate_pdf_report(summary_data, file_analysis_data, word_counts):
     # Add space before next section
     elements.append(PageBreak())
     
-    # File analysis section
+    # File analysis section - PRESERVE USER'S WORD ORDER
     elements.append(Paragraph("Per-File Analysis", styles['Heading2']))
     elements.append(Spacer(1, 8))
     
-    # Prepare file analysis table data
+    # Prepare file analysis table data in the original word order
     if file_analysis_data:
         file_names = list(next(iter(file_analysis_data.values())).keys())
         file_table_data = [["Target Word"] + list(file_names) + ["Total"]]
         
-        for word, counts in file_analysis_data.items():
-            row = [word]
-            total = 0
-            for file_name in file_names:
-                count = counts.get(file_name, 0)
-                row.append(str(count))
-                total += count
-            row.append(str(total))
-            file_table_data.append(row)
+        # Add rows in the original word order
+        for word in target_words:
+            if word in file_analysis_data:
+                counts = file_analysis_data[word]
+                row = [word]
+                total = 0
+                for file_name in file_names:
+                    count = counts.get(file_name, 0)
+                    row.append(str(count))
+                    total += count
+                row.append(str(total))
+                file_table_data.append(row)
         
         # Create file analysis table
         file_table = Table(file_table_data)
@@ -354,7 +361,7 @@ def generate_pdf_report(summary_data, file_analysis_data, word_counts):
     buffer.seek(0)
     return buffer
 
-def generate_excel_report(summary_data, file_analysis_data, word_counts):
+def generate_excel_report(summary_data, file_analysis_data, word_counts, target_words):
     """Generate Excel report with multiple sheets in memory"""
     buffer = io.BytesIO()
     
@@ -399,15 +406,22 @@ def generate_excel_report(summary_data, file_analysis_data, word_counts):
             cell.border = border
             cell.alignment = center_aligned
     
-    # Summary Report Sheet
+    # Summary Report Sheet - PRESERVE USER'S WORD ORDER
     ws_summary = wb.create_sheet(title="Summary Report")
     
-    # Prepare summary data
+    # Prepare summary data in the original word order
     summary_headers = ["Target Word", "Frequency Count", "Percentage"]
     ws_summary.append(summary_headers)
     
-    for row in summary_data:
-        ws_summary.append([row["Target Word"], row["Frequency Count"], row["Percentage"]])
+    for word in target_words:
+        # Find the matching summary data for this word
+        word_data = next((item for item in summary_data if item["Target Word"] == word), None)
+        if word_data:
+            ws_summary.append([
+                word_data["Target Word"], 
+                word_data["Frequency Count"], 
+                word_data["Percentage"]
+            ])
     
     # Format summary sheet
     for cell in ws_summary[1]:
@@ -415,12 +429,12 @@ def generate_excel_report(summary_data, file_analysis_data, word_counts):
         cell.font = header_font
         cell.alignment = center_aligned
     
-    for row in ws_summary.iter_rows(min_row=2, max_row=len(summary_data)+1):
+    for row in ws_summary.iter_rows(min_row=2, max_row=len(target_words)+1):
         for cell in row:
             cell.border = border
             cell.alignment = center_aligned
     
-    # Per-File Analysis Sheet
+    # Per-File Analysis Sheet - PRESERVE USER'S WORD ORDER
     if file_analysis_data:
         ws_analysis = wb.create_sheet(title="Per-File Analysis")
         
@@ -429,16 +443,18 @@ def generate_excel_report(summary_data, file_analysis_data, word_counts):
         headers = ["Target Word"] + list(file_names) + ["Total"]
         ws_analysis.append(headers)
         
-        # Add data
-        for word, counts in file_analysis_data.items():
-            row = [word]
-            total = 0
-            for file_name in file_names:
-                count = counts.get(file_name, 0)
-                row.append(count)
-                total += count
-            row.append(total)
-            ws_analysis.append(row)
+        # Add data in the original word order
+        for word in target_words:
+            if word in file_analysis_data:
+                counts = file_analysis_data[word]
+                row = [word]
+                total = 0
+                for file_name in file_names:
+                    count = counts.get(file_name, 0)
+                    row.append(count)
+                    total += count
+                row.append(total)
+                ws_analysis.append(row)
         
         # Format analysis sheet
         for cell in ws_analysis[1]:
@@ -446,7 +462,7 @@ def generate_excel_report(summary_data, file_analysis_data, word_counts):
             cell.font = Font(bold=True)
             cell.alignment = center_aligned
         
-        for row in ws_analysis.iter_rows(min_row=2, max_row=len(file_analysis_data)+1):
+        for row in ws_analysis.iter_rows(min_row=2, max_row=len(target_words)+1):
             for cell in row:
                 cell.border = border
                 cell.alignment = center_aligned
@@ -626,9 +642,10 @@ def main():
             )
             total_occurrences = sum(overall_frequencies.values())
             
-            # Prepare summary data with percentages
+            # Prepare summary data with percentages - PRESERVE USER'S WORD ORDER
             summary_data = []
-            for word, count in overall_frequencies.items():
+            for word in target_words:
+                count = overall_frequencies[word]
                 percentage = (count / total_occurrences * 100) if total_occurrences > 0 else 0
                 summary_data.append({
                     "Target Word": word,
@@ -636,8 +653,6 @@ def main():
                     "Percentage": percentage
                 })
             
-            # Sort summary data by frequency count (descending)
-            summary_data.sort(key=lambda x: x["Frequency Count"], reverse=True)
             progress_bar.progress(100)
             
             # Display results
@@ -654,17 +669,26 @@ def main():
             st.dataframe(stats_df, height=200)
             st.markdown(f"**Total Words in Reports:** {total_report_words:,}")
             
-            # Summary Report
+            # Summary Report - PRESERVE USER'S WORD ORDER
             st.subheader("Summary Report")
             summary_df = pd.DataFrame(summary_data)
             st.dataframe(summary_df, height=300)
             
-            # File Analysis Report
+            # File Analysis Report - PRESERVE USER'S WORD ORDER
             st.subheader("Per-File Analysis")
             if file_analysis:
-                file_analysis_df = pd.DataFrame.from_dict(file_analysis, orient='index')
-                file_analysis_df['Total'] = file_analysis_df.sum(axis=1)
-                file_analysis_df = file_analysis_df.sort_values('Total', ascending=False)
+                # Create DataFrame with words in original order
+                analysis_rows = []
+                for word in target_words:
+                    if word in file_analysis:
+                        row = {"Target Word": word}
+                        for file_name in file_analysis[word]:
+                            row[file_name] = file_analysis[word][file_name]
+                        row['Total'] = sum(file_analysis[word].values())
+                        analysis_rows.append(row)
+                
+                file_analysis_df = pd.DataFrame(analysis_rows)
+                file_analysis_df.set_index("Target Word", inplace=True)
                 st.dataframe(file_analysis_df, height=400)
             else:
                 st.warning("No file analysis data available")
@@ -675,11 +699,11 @@ def main():
             
             # Generate reports in memory
             with st.spinner("Preparing reports..."):
-                # Generate PDF report in memory
-                pdf_buffer = generate_pdf_report(summary_data, file_analysis, document_stats)
+                # Generate PDF report in memory - pass target_words for ordering
+                pdf_buffer = generate_pdf_report(summary_data, file_analysis, document_stats, target_words)
                 
-                # Generate Excel report in memory
-                excel_buffer = generate_excel_report(summary_data, file_analysis, document_stats)
+                # Generate Excel report in memory - pass target_words for ordering
+                excel_buffer = generate_excel_report(summary_data, file_analysis, document_stats, target_words)
             
             with col1:
                 # Download PDF report
@@ -701,7 +725,7 @@ def main():
                     use_container_width=True
                 )
             
-            # Additional CSV exports
+            # Additional CSV exports - PRESERVE USER'S WORD ORDER
             st.subheader("Export Data Tables")
             col_csv1, col_csv2 = st.columns(2)
             

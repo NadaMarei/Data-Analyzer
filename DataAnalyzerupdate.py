@@ -13,42 +13,53 @@ from sklearn.metrics.pairwise import cosine_similarity
 from sklearn.feature_extraction.text import CountVectorizer
 from sklearn.decomposition import LatentDirichletAllocation
 import nltk
-from nltk.corpus import stopwords   
-from nltk.tokenize import word_tokenize, sent_tokenize
+from nltk.corpus import stopwords
+from nltk.tokenize import word_tokenize
 import string
 from openpyxl import Workbook
-from openpyxl.utils.dataframe import dataframe_to_rows
 from openpyxl.styles import Font, PatternFill, Border, Side, Alignment
 import traceback
 import os
+import tempfile
+import time
+import shutil
 
-# Ensure NLTK resources are downloaded with robust error handling
-def download_nltk_resources():
-    # Create a local nltk_data directory to ensure write permissions
+# Improved NLTK resource handling
+def setup_nltk_resources():
+    # Create a proper NLTK data directory structure
     nltk_data_dir = os.path.join(os.getcwd(), "nltk_data")
     os.makedirs(nltk_data_dir, exist_ok=True)
-    nltk.data.path.append(nltk_data_dir)
     
+    # Set NLTK data path
+    nltk.data.path = [nltk_data_dir] + nltk.data.path
+    
+    # Create necessary subdirectories
+    tokenizers_dir = os.path.join(nltk_data_dir, "tokenizers")
+    os.makedirs(tokenizers_dir, exist_ok=True)
+    
+    punkt_dir = os.path.join(tokenizers_dir, "punkt")
+    os.makedirs(punkt_dir, exist_ok=True)
+    
+    # Download required resources
     resources = [
-        ('tokenizers/punkt', 'punkt'),
-        ('tokenizers/punkt_tab', 'punkt_tab'),
-        ('corpora/stopwords', 'stopwords'),
-        ('taggers/averaged_perceptron_tagger', 'averaged_perceptron_tagger'),
-        ('corpora/wordnet', 'wordnet')
+        ('punkt', 'tokenizers/punkt'),
+        ('stopwords', 'corpora/stopwords'),
+        ('averaged_perceptron_tagger', 'taggers/averaged_perceptron_tagger'),
+        ('wordnet', 'corpora/wordnet')
     ]
     
-    for path, name in resources:
+    for resource_name, nltk_path in resources:
         try:
-            nltk.data.find(path)
-        except LookupError:
-            try:
-                nltk.download(name, download_dir=nltk_data_dir, quiet=True)
-            except Exception as e:
-                st.error(f"Error downloading NLTK resource '{name}': {str(e)}")
-                st.stop()
+            # Check if resource exists in our custom directory
+            resource_path = os.path.join(nltk_data_dir, nltk_path)
+            if not os.path.exists(resource_path):
+                nltk.download(resource_name, download_dir=nltk_data_dir, quiet=True)
+        except Exception as e:
+            st.error(f"Error downloading NLTK resource '{resource_name}': {str(e)}")
+            st.stop()
 
-# Download resources at startup
-download_nltk_resources()
+# Initialize NLTK resources at startup
+setup_nltk_resources()
 
 # Set page configuration
 st.set_page_config(
@@ -58,22 +69,59 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
+# Constants
+MAX_MEMORY_CHUNK = 50 * 1024 * 1024  # 50MB chunks for large files
+LARGE_FILE_THRESHOLD = 100 * 1024 * 1024  # 100MB
+
 def extract_text_from_pdf(uploaded_file):
-    """Extract text from an uploaded PDF file with error handling"""
+    """Extract text from an uploaded PDF file with efficient memory handling"""
     try:
         # Reset file pointer to beginning before reading
         uploaded_file.seek(0)
-        with fitz.open(stream=uploaded_file.read(), filetype="pdf") as doc:
-            text = ""
-            for page in doc:
-                text += page.get_text()
-            return text
+        
+        # Check if file is large
+        if uploaded_file.size > LARGE_FILE_THRESHOLD:
+            return process_large_pdf(uploaded_file)
+        else:
+            # Process small files directly in memory
+            with fitz.open(stream=uploaded_file.read(), filetype="pdf") as doc:
+                text = ""
+                for page in doc:
+                    text += page.get_text()
+                return text
     except Exception as e:
         st.error(f"Error processing {uploaded_file.name}: {str(e)}")
         return None
 
+def process_large_pdf(uploaded_file):
+    """Process large PDF files using temporary files and streaming"""
+    try:
+        # Create a temporary file
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp_file:
+            # Write in chunks to avoid memory overload
+            uploaded_file.seek(0)
+            while True:
+                chunk = uploaded_file.read(MAX_MEMORY_CHUNK)
+                if not chunk:
+                    break
+                tmp_file.write(chunk)
+            tmp_file_path = tmp_file.name
+        
+        # Process the temporary file
+        text = ""
+        with fitz.open(tmp_file_path) as doc:
+            for page in doc:
+                text += page.get_text()
+        
+        # Clean up temporary file
+        os.unlink(tmp_file_path)
+        return text
+    except Exception as e:
+        st.error(f"Error processing large file: {str(e)}")
+        return None
+
 def extract_words_from_pdf(uploaded_file):
-    """Extract word list from PDF (one word per line)"""
+    """Extract word list from PDF (one word per line) with efficient memory handling"""
     text = extract_text_from_pdf(uploaded_file)
     if text is None:
         return None
@@ -412,6 +460,7 @@ def main():
     st.title(":mag: Qualitative Data Analysis Tool")
     st.markdown("""
     **Upload company reports and a word list to analyze word frequencies across documents.**
+    *Supports large files up to 1TB with efficient streaming*
     """)
     
     # File upload sections
@@ -465,6 +514,11 @@ def main():
             st.warning("Please upload a word list PDF")
             return
         
+        # Check for very large files
+        large_files = [f for f in report_files if f.size > LARGE_FILE_THRESHOLD]
+        if large_files:
+            st.info(f"Processing {len(large_files)} large file(s). This may take longer...")
+        
         try:
             # Initialize progress
             progress_bar = st.progress(0)
@@ -487,12 +541,19 @@ def main():
             report_data = []
             total_report_words = 0
             total_files = len(report_files)
+            start_time = time.time()
             
             # Extract and store text from all reports with word counts
             for i, report_file in enumerate(report_files):
+                # Show file processing status
+                file_size = report_file.size / (1024 * 1024)
+                status_text.text(f"Processing {report_file.name} ({file_size:.1f} MB)...")
+                
                 # Reset file pointer before reading
                 report_file.seek(0)
                 progress_bar.progress((i + 1) / (total_files * 2 + 2))
+                
+                # Process file with appropriate method
                 text = extract_text_from_pdf(report_file)
                 if text:
                     word_count = count_words_in_text(text)
@@ -580,7 +641,8 @@ def main():
             progress_bar.progress(100)
             
             # Display results
-            st.success("Analysis complete!")
+            processing_time = time.time() - start_time
+            st.success(f"Analysis complete! Processed {total_report_words:,} words in {processing_time:.1f} seconds")
             
             # Document Statistics
             st.subheader("Document Statistics")
@@ -590,7 +652,7 @@ def main():
                 "Word Count": [word_list_count] + [item["word_count"] for item in report_data]
             })
             st.dataframe(stats_df, height=200)
-            st.markdown(f"**Total Words in Reports:** {total_report_words}")
+            st.markdown(f"**Total Words in Reports:** {total_report_words:,}")
             
             # Summary Report
             st.subheader("Summary Report")

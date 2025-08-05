@@ -20,11 +20,18 @@ from openpyxl import Workbook
 from openpyxl.utils.dataframe import dataframe_to_rows
 from openpyxl.styles import Font, PatternFill, Border, Side, Alignment
 import traceback
+import os
 
 # Ensure NLTK resources are downloaded with robust error handling
 def download_nltk_resources():
+    # Create a local nltk_data directory to ensure write permissions
+    nltk_data_dir = os.path.join(os.getcwd(), "nltk_data")
+    os.makedirs(nltk_data_dir, exist_ok=True)
+    nltk.data.path.append(nltk_data_dir)
+    
     resources = [
         ('tokenizers/punkt', 'punkt'),
+        ('tokenizers/punkt_tab', 'punkt_tab'),
         ('corpora/stopwords', 'stopwords'),
         ('taggers/averaged_perceptron_tagger', 'averaged_perceptron_tagger'),
         ('corpora/wordnet', 'wordnet')
@@ -35,7 +42,7 @@ def download_nltk_resources():
             nltk.data.find(path)
         except LookupError:
             try:
-                nltk.download(name)
+                nltk.download(name, download_dir=nltk_data_dir, quiet=True)
             except Exception as e:
                 st.error(f"Error downloading NLTK resource '{name}': {str(e)}")
                 st.stop()

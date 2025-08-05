@@ -205,7 +205,7 @@ def generate_pdf_report(summary_data, file_analysis_data, word_counts):
     
     stats_table_data.append([
         "Total", 
-        f"{len(word_counts['reports']} Reports", 
+        f"{len(word_counts['reports'])} Reports", 
         str(word_counts['total_report_words'])
     ])
     
@@ -265,7 +265,7 @@ def generate_pdf_report(summary_data, file_analysis_data, word_counts):
     
     # Prepare file analysis table data
     if file_analysis_data:
-        file_names = list(next(iter(file_analysis_data.values())).keys()
+        file_names = list(next(iter(file_analysis_data.values())).keys())
         file_table_data = [["Target Word"] + list(file_names) + ["Total"]]
         
         for word, counts in file_analysis_data.items():
@@ -370,7 +370,7 @@ def generate_excel_report(summary_data, file_analysis_data, word_counts):
         ws_analysis = wb.create_sheet(title="Per-File Analysis")
         
         # Prepare headers
-        file_names = list(next(iter(file_analysis_data.values())).keys()
+        file_names = list(next(iter(file_analysis_data.values())).keys())
         headers = ["Target Word"] + list(file_names) + ["Total"]
         ws_analysis.append(headers)
         

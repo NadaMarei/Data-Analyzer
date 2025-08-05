@@ -13,7 +13,7 @@ from sklearn.metrics.pairwise import cosine_similarity
 from sklearn.feature_extraction.text import CountVectorizer
 from sklearn.decomposition import LatentDirichletAllocation
 import nltk
-from nltk.corpus import stopwords
+from nltk.corpus import stopwords   
 from nltk.tokenize import word_tokenize, sent_tokenize
 import string
 from openpyxl import Workbook

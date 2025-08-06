@@ -3,6 +3,7 @@ import fitz  # PyMuPDF
 import re
 import io
 import sys
+import shutil
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import letter, landscape
 from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, PageBreak, Spacer
@@ -24,7 +25,7 @@ import os
 import tempfile
 import time
 
-# Improved NLTK resource handling with better error reporting
+# Robust NLTK resource handling with punkt_tab workaround
 def setup_nltk_resources():
     try:
         # Create a proper NLTK data directory structure
@@ -41,6 +42,10 @@ def setup_nltk_resources():
         punkt_dir = os.path.join(tokenizers_dir, "punkt")
         os.makedirs(punkt_dir, exist_ok=True)
         
+        # Create special punkt_tab directory for compatibility
+        punkt_tab_dir = os.path.join(tokenizers_dir, "punkt_tab", "english")
+        os.makedirs(punkt_tab_dir, exist_ok=True)
+        
         # Download required resources
         resources = [
             ('punkt', 'tokenizers/punkt'),
@@ -55,6 +60,14 @@ def setup_nltk_resources():
             if not os.path.exists(resource_path):
                 nltk.download(resource_name, download_dir=nltk_data_dir, quiet=True)
                 
+        # Copy punkt files to punkt_tab for compatibility
+        for filename in os.listdir(punkt_dir):
+            if filename.startswith("english"):
+                src = os.path.join(punkt_dir, filename)
+                dst = os.path.join(punkt_tab_dir, filename)
+                if not os.path.exists(dst):
+                    shutil.copy(src, dst)
+        
         # Verify resources are properly downloaded
         nltk.data.find('tokenizers/punkt')
         nltk.data.find('corpora/stopwords')

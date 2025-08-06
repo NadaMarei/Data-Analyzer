@@ -25,7 +25,7 @@ import os
 import tempfile
 import time
 
-# Robust NLTK resource handling with punkt_tab workaround
+# Robust NLTK resource handling with collocations.tab fix
 def setup_nltk_resources():
     try:
         # Create a proper NLTK data directory structure
@@ -67,6 +67,12 @@ def setup_nltk_resources():
                 dst = os.path.join(punkt_tab_dir, filename)
                 if not os.path.exists(dst):
                     shutil.copy(src, dst)
+        
+        # Create missing collocations.tab file
+        collocations_path = os.path.join(punkt_tab_dir, "collocations.tab")
+        if not os.path.exists(collocations_path):
+            with open(collocations_path, "w") as f:
+                f.write("# Empty collocations file\n")
         
         # Verify resources are properly downloaded
         nltk.data.find('tokenizers/punkt')

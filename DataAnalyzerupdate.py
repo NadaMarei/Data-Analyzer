@@ -24,69 +24,12 @@ import traceback
 import os
 import tempfile
 import time
+import base64
 
-# Robust NLTK resource handling with collocations.tab fix
-def setup_nltk_resources():
-    try:
-        # Create a proper NLTK data directory structure
-        nltk_data_dir = os.path.join(os.getcwd(), "nltk_data")
-        os.makedirs(nltk_data_dir, exist_ok=True)
-        
-        # Set NLTK data path
-        nltk.data.path = [nltk_data_dir] + nltk.data.path
-        
-        # Create necessary subdirectories
-        tokenizers_dir = os.path.join(nltk_data_dir, "tokenizers")
-        os.makedirs(tokenizers_dir, exist_ok=True)
-        
-        punkt_dir = os.path.join(tokenizers_dir, "punkt")
-        os.makedirs(punkt_dir, exist_ok=True)
-        
-        # Create special punkt_tab directory for compatibility
-        punkt_tab_dir = os.path.join(tokenizers_dir, "punkt_tab", "english")
-        os.makedirs(punkt_tab_dir, exist_ok=True)
-        
-        # Download required resources
-        resources = [
-            ('punkt', 'tokenizers/punkt'),
-            ('stopwords', 'corpora/stopwords'),
-            ('averaged_perceptron_tagger', 'taggers/averaged_perceptron_tagger'),
-            ('wordnet', 'corpora/wordnet')
-        ]
-        
-        for resource_name, nltk_path in resources:
-            # Check if resource exists in our custom directory
-            resource_path = os.path.join(nltk_data_dir, nltk_path)
-            if not os.path.exists(resource_path):
-                nltk.download(resource_name, download_dir=nltk_data_dir, quiet=True)
-                
-        # Copy punkt files to punkt_tab for compatibility
-        for filename in os.listdir(punkt_dir):
-            if filename.startswith("english"):
-                src = os.path.join(punkt_dir, filename)
-                dst = os.path.join(punkt_tab_dir, filename)
-                if not os.path.exists(dst):
-                    shutil.copy(src, dst)
-        
-        # Create missing collocations.tab file
-        collocations_path = os.path.join(punkt_tab_dir, "collocations.tab")
-        if not os.path.exists(collocations_path):
-            with open(collocations_path, "w") as f:
-                f.write("# Empty collocations file\n")
-        
-        # Verify resources are properly downloaded
-        nltk.data.find('tokenizers/punkt')
-        nltk.data.find('corpora/stopwords')
-        return True
-    except Exception as e:
-        st.error(f"NLTK setup failed: {str(e)}")
-        st.error("Please check internet connection or try restarting the app")
-        return False
-
-# Set page configuration
+# Set page configuration first to avoid Streamlit rendering issues
 st.set_page_config(
     page_title="Qualitative Data Analyzer",
-    page_icon=":mag:",
+    page_icon="📊",
     layout="wide",
     initial_sidebar_state="expanded"
 )
@@ -94,6 +37,30 @@ st.set_page_config(
 # Constants
 MAX_MEMORY_CHUNK = 50 * 1024 * 1024  # 50MB chunks for large files
 LARGE_FILE_THRESHOLD = 100 * 1024 * 1024  # 100MB
+
+# Robust NLTK resource handling
+def setup_nltk_resources():
+    try:
+        # Create a proper NLTK data directory structure
+        nltk_data_dir = os.path.join(tempfile.gettempdir(), "nltk_data")
+        os.makedirs(nltk_data_dir, exist_ok=True)
+        
+        # Set NLTK data path
+        nltk.data.path = [nltk_data_dir] + nltk.data.path
+        
+        # Download required resources
+        resources = ['punkt', 'stopwords', 'averaged_perceptron_tagger', 'wordnet']
+        
+        for resource in resources:
+            try:
+                nltk.data.find(f'tokenizers/{resource}' if resource == 'punkt' else f'corpora/{resource}')
+            except LookupError:
+                nltk.download(resource, download_dir=nltk_data_dir, quiet=True)
+        
+        return True
+    except Exception as e:
+        st.error(f"NLTK setup failed: {str(e)}")
+        return False
 
 def extract_text_from_pdf(uploaded_file):
     """Extract text from an uploaded PDF file with efficient memory handling"""
@@ -183,11 +150,11 @@ def count_words_in_text(text):
 
 def create_word_embeddings(documents):
     """Create word embeddings using Bag-of-Words and LDA"""
-    if not documents:
+    if not documents or not any(documents):
         return {}
     
     # Create document-term matrix
-    vectorizer = CountVectorizer(max_features=1000)
+    vectorizer = CountVectorizer(max_features=1000, stop_words='english')
     try:
         dtm = vectorizer.fit_transform(documents)
     except ValueError as ve:
@@ -199,7 +166,8 @@ def create_word_embeddings(documents):
     
     # Apply LDA to get topic distributions
     try:
-        lda = LatentDirichletAllocation(n_components=10, random_state=42)
+        n_components = min(10, len(documents) - 1) if len(documents) > 1 else 5
+        lda = LatentDirichletAllocation(n_components=n_components, random_state=42)
         topic_distributions = lda.fit_transform(dtm)
     except Exception as e:
         st.error(f"LDA failed: {str(e)}")
@@ -227,18 +195,19 @@ def find_similar_words(target_word, word_embeddings, threshold=0.7):
     """Find similar words based on cosine similarity"""
     similar_words = []
     if target_word in word_embeddings:
-        target_embedding = word_embeddings[target_word]
+        target_embedding = word_embeddings[target_word].reshape(1, -1)
         for word, embedding in word_embeddings.items():
             if word != target_word:
                 try:
-                    similarity = cosine_similarity([target_embedding], [embedding])[0][0]
+                    embedding_reshaped = embedding.reshape(1, -1)
+                    similarity = cosine_similarity(target_embedding, embedding_reshaped)[0][0]
                     if similarity > threshold:
                         similar_words.append(word)
                 except Exception:
                     continue
     return similar_words
 
-def count_word_frequencies(text, word_list, word_embeddings=None, use_synonyms=False):
+def count_word_frequencies(text, word_list, word_embeddings=None, use_synonyms=False, threshold=0.7):
     """Count occurrences of words with optional synonym detection"""
     frequencies = defaultdict(int)
     if not text:
@@ -257,7 +226,7 @@ def count_word_frequencies(text, word_list, word_embeddings=None, use_synonyms=F
         
         # Detect and count synonyms if enabled
         if use_synonyms and word_embeddings:
-            similar_words = find_similar_words(word.lower(), word_embeddings)
+            similar_words = find_similar_words(word.lower(), word_embeddings, threshold)
             for synonym in similar_words:
                 try:
                     syn_pattern = r'\b' + re.escape(synonym) + r'\b'
@@ -527,7 +496,7 @@ def main():
             st.error("Critical error: NLTK setup failed. App cannot continue.")
             return
             
-        st.title(":mag: Qualitative Data Analysis Tool")
+        st.title("📊 Qualitative Data Analysis Tool")
         st.markdown("""
         **Upload company reports and a word list to analyze word frequencies across documents.**
         *Supports large files up to 1TB with efficient streaming*
@@ -679,7 +648,8 @@ def main():
                         data["text"], 
                         target_words, 
                         word_embeddings, 
-                        use_synonyms=(analysis_mode == "Exact words and detected synonyms")
+                        use_synonyms=(analysis_mode == "Exact words and detected synonyms"),
+                        threshold=similarity_threshold if analysis_mode == "Exact words and detected synonyms" else 0.7
                     )
                     
                     # Store in analysis structure
@@ -692,7 +662,8 @@ def main():
                     combined_text, 
                     target_words, 
                     word_embeddings, 
-                    use_synonyms=(analysis_mode == "Exact words and detected synonyms")
+                    use_synonyms=(analysis_mode == "Exact words and detected synonyms"),
+                    threshold=similarity_threshold if analysis_mode == "Exact words and detected synonyms" else 0.7
                 )
                 total_occurrences = sum(overall_frequencies.values())
                 

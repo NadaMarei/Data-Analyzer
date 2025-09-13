@@ -11,8 +11,8 @@ import pandas as pd
 from collections import defaultdict
 import numpy as np
 from sklearn.metrics.pairwise import cosine_similarity
-from sklearn.feature_extraction.text import CountVectorizer
-from sklearn.decomposition import LatentDirichletAllocation
+from sklearn.feature_extraction.text import TfidfVectorizer, CountVectorizer
+from sklearn.decomposition import LatentDirichletAllocation, TruncatedSVD
 import nltk
 from nltk.corpus import stopwords
 from nltk.tokenize import word_tokenize, RegexpTokenizer
@@ -23,8 +23,9 @@ import traceback
 import os
 import tempfile
 import time
-import requests
-import zipfile
+from gensim.models import Word2Vec
+import warnings
+warnings.filterwarnings('ignore')
 
 # Set page configuration first to avoid Streamlit rendering issues
 st.set_page_config(
@@ -49,7 +50,7 @@ def setup_nltk_resources():
         nltk.data.path.append(nltk_data_dir)
         
         # Download required resources
-        resources = ['punkt', 'stopwords', 'averaged_perceptron_tagger', 'wordnet']
+        resources = ['punkt', 'stopwords']
         
         for resource in resources:
             try:
@@ -179,62 +180,61 @@ def count_words_in_text(text):
     return len(text.split())
 
 def create_word_embeddings(documents):
-    """Create word embeddings using Bag-of-Words and LDA"""
+    """Create word embeddings using Word2Vec for better synonym detection"""
     if not documents or not any(documents):
         return {}
     
-    # Create document-term matrix
-    vectorizer = CountVectorizer(max_features=1000, stop_words='english')
+    # Tokenize documents
+    tokenized_docs = []
+    for doc in documents:
+        tokens = preprocess_text(doc)
+        if tokens:
+            tokenized_docs.append(tokens)
+    
+    if not tokenized_docs or not any(tokenized_docs):
+        return {}
+    
+    # Train Word2Vec model
     try:
-        dtm = vectorizer.fit_transform(documents)
-    except ValueError as ve:
-        st.warning(f"Vectorization warning: {str(ve)}")
-        return {}
-    except Exception as e:
-        st.error(f"Error creating document-term matrix: {str(e)}")
-        return {}
-    
-    # Apply LDA to get topic distributions
-    try:
-        n_components = min(10, len(documents) - 1) if len(documents) > 1 else 5
-        lda = LatentDirichletAllocation(n_components=n_components, random_state=42)
-        topic_distributions = lda.fit_transform(dtm)
-    except Exception as e:
-        st.error(f"LDA failed: {str(e)}")
-        return {}
-    
-    # Get vocabulary
-    vocabulary = vectorizer.get_feature_names_out()
-    
-    # Create word embeddings
-    word_embeddings = {}
-    for word in vocabulary:
-        word_idx = vectorizer.vocabulary_.get(word)
-        if word_idx is not None:
-            word_topics = []
-            for i in range(len(documents)):
-                if dtm[i, word_idx] > 0:
-                    word_topics.append(topic_distributions[i])
+        model = Word2Vec(
+            sentences=tokenized_docs,
+            vector_size=100,     # Size of word vectors
+            window=5,           # Context window size
+            min_count=2,        # Ignore words with lower frequency
+            workers=4,          # Number of CPU cores
+            sg=1                # Use skip-gram (better for small datasets)
+        )
+        
+        # Create word embeddings dictionary
+        word_embeddings = {}
+        for word in model.wv.index_to_key:
+            word_embeddings[word] = model.wv[word]
             
-            if word_topics:
-                word_embeddings[word] = np.mean(word_topics, axis=0)
-    
-    return word_embeddings
+        return word_embeddings
+    except Exception as e:
+        st.error(f"Word2Vec training failed: {str(e)}")
+        return {}
 
 def find_similar_words(target_word, word_embeddings, threshold=0.7):
-    """Find similar words based on cosine similarity"""
+    """Find similar words based on cosine similarity using Word2Vec embeddings"""
     similar_words = []
-    if target_word in word_embeddings:
-        target_embedding = word_embeddings[target_word].reshape(1, -1)
+    if target_word.lower() in word_embeddings:
+        target_embedding = word_embeddings[target_word.lower()]
+        
         for word, embedding in word_embeddings.items():
-            if word != target_word:
+            if word != target_word.lower():
                 try:
-                    embedding_reshaped = embedding.reshape(1, -1)
-                    similarity = cosine_similarity(target_embedding, embedding_reshaped)[0][0]
+                    # Calculate cosine similarity
+                    similarity = cosine_similarity(
+                        [target_embedding], 
+                        [embedding]
+                    )[0][0]
+                    
                     if similarity > threshold:
                         similar_words.append(word)
-                except Exception:
+                except Exception as e:
                     continue
+    
     return similar_words
 
 def count_word_frequencies(text, word_list, word_embeddings=None, use_synonyms=False, threshold=0.7):
@@ -256,7 +256,12 @@ def count_word_frequencies(text, word_list, word_embeddings=None, use_synonyms=F
         
         # Detect and count synonyms if enabled
         if use_synonyms and word_embeddings:
-            similar_words = find_similar_words(word.lower(), word_embeddings, threshold)
+            similar_words = find_similar_words(word, word_embeddings, threshold)
+            
+            # Show detected synonyms in debug mode
+            if similar_words and st.session_state.get('debug_mode', False):
+                st.write(f"Synonyms for '{word}': {', '.join(similar_words)}")
+                
             for synonym in similar_words:
                 try:
                     syn_pattern = r'\b' + re.escape(synonym) + r'\b'
@@ -521,8 +526,13 @@ def generate_excel_report(summary_data, file_analysis_data, word_counts, target_
 
 def main():
     try:
+        # Initialize session state for debug mode
+        if 'debug_mode' not in st.session_state:
+            st.session_state.debug_mode = False
+            
         # Initialize NLTK resources
-        if not setup_nltk_resources():
+        nltk_success = setup_nltk_resources()
+        if not nltk_success:
             st.warning("NLTK setup had issues. Using fallback text processing methods.")
             
         st.title("📊 Qualitative Data Analysis Tool")
@@ -530,6 +540,12 @@ def main():
         **Upload company reports and a word list to analyze word frequencies across documents.**
         *Supports large files up to 1TB with efficient streaming*
         """)
+        
+        # Debug mode toggle
+        if st.checkbox("Enable debug mode (shows detected synonyms)"):
+            st.session_state.debug_mode = True
+        else:
+            st.session_state.debug_mode = False
         
         # File upload sections
         with st.expander("Upload Documents", expanded=True):
@@ -619,7 +635,7 @@ def main():
                     
                     # Reset file pointer before reading
                     report_file.seek(0)
-                    progress_bar.progress((i + 1) / (total_files * 2 + 2))
+                    progress_bar.progress((i + 1) / (total_files * 3 + 2))
                     
                     # Process file with appropriate method
                     text = extract_text_from_pdf(report_file)
@@ -651,18 +667,18 @@ def main():
                 word_embeddings = None
                 if analysis_mode == "Exact words and detected synonyms":
                     status_text.text("Building semantic model...")
-                    # Preprocess texts for embedding creation
-                    processed_texts = []
-                    for item in report_data:
-                        tokens = preprocess_text(item["text"])
-                        if tokens:
-                            processed_texts.append(" ".join(tokens))
+                    # Use all text for training the semantic model
+                    training_texts = [item["text"] for item in report_data]
                     
-                    if processed_texts:
-                        word_embeddings = create_word_embeddings(processed_texts)
+                    if training_texts:
+                        word_embeddings = create_word_embeddings(training_texts)
+                        if not word_embeddings:
+                            st.warning("Semantic model creation failed. Using exact words only.")
+                            analysis_mode = "Exact words only"
                     else:
                         st.warning("No valid text for semantic analysis. Using exact words only.")
-                    progress_bar.progress((total_files + 1) / (total_files * 2 + 2))
+                        analysis_mode = "Exact words only"
+                    progress_bar.progress((total_files + 1) / (total_files * 3 + 2))
                 
                 # Initialize file analysis structure
                 file_analysis = defaultdict(lambda: defaultdict(int))
@@ -670,7 +686,7 @@ def main():
                 # Count words in each file
                 for i, data in enumerate(report_data):
                     status_text.text(f"Analyzing file {i+1}/{len(report_data)}...")
-                    progress_bar.progress((total_files + i + 2) / (total_files * 2 + 2))
+                    progress_bar.progress((total_files + i + 2) / (total_files * 3 + 2))
                     
                     # Count words for this specific file
                     file_counts = count_word_frequencies(
@@ -712,6 +728,9 @@ def main():
                 # Display results
                 processing_time = time.time() - start_time
                 st.success(f"Analysis complete! Processed {total_report_words:,} words in {processing_time:.1f} seconds")
+                
+                if analysis_mode == "Exact words and detected synonyms" and word_embeddings:
+                    st.info("✓ Synonym detection was successfully enabled")
                 
                 # Document Statistics
                 st.subheader("Document Statistics")

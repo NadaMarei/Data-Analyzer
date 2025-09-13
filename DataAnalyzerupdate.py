@@ -2,7 +2,6 @@ import streamlit as st
 import fitz  # PyMuPDF
 import re
 import io
-import sys
 import shutil
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import letter, landscape
@@ -16,7 +15,7 @@ from sklearn.feature_extraction.text import CountVectorizer
 from sklearn.decomposition import LatentDirichletAllocation
 import nltk
 from nltk.corpus import stopwords
-from nltk.tokenize import word_tokenize
+from nltk.tokenize import word_tokenize, RegexpTokenizer
 import string
 from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill, Border, Side, Alignment
@@ -24,7 +23,8 @@ import traceback
 import os
 import tempfile
 import time
-import base64
+import requests
+import zipfile
 
 # Set page configuration first to avoid Streamlit rendering issues
 st.set_page_config(
@@ -38,29 +38,48 @@ st.set_page_config(
 MAX_MEMORY_CHUNK = 50 * 1024 * 1024  # 50MB chunks for large files
 LARGE_FILE_THRESHOLD = 100 * 1024 * 1024  # 100MB
 
-# Robust NLTK resource handling
+# Robust NLTK resource handling with punkt_tab fix
 def setup_nltk_resources():
     try:
-        # Create a proper NLTK data directory structure
+        # Create a proper NLTK data directory
         nltk_data_dir = os.path.join(tempfile.gettempdir(), "nltk_data")
         os.makedirs(nltk_data_dir, exist_ok=True)
         
         # Set NLTK data path
-        nltk.data.path = [nltk_data_dir] + nltk.data.path
+        nltk.data.path.append(nltk_data_dir)
         
         # Download required resources
         resources = ['punkt', 'stopwords', 'averaged_perceptron_tagger', 'wordnet']
         
         for resource in resources:
             try:
-                nltk.data.find(f'tokenizers/{resource}' if resource == 'punkt' else f'corpora/{resource}')
+                if resource == 'punkt':
+                    nltk.data.find('tokenizers/punkt')
+                else:
+                    nltk.data.find(f'corpora/{resource}')
             except LookupError:
                 nltk.download(resource, download_dir=nltk_data_dir, quiet=True)
+        
+        # Create punkt_tab directory structure for compatibility
+        punkt_tab_dir = os.path.join(nltk_data_dir, 'tokenizers', 'punkt_tab')
+        os.makedirs(punkt_tab_dir, exist_ok=True)
+        
+        # Create a minimal collocations.tab file if it doesn't exist
+        collocations_path = os.path.join(punkt_tab_dir, 'collocations.tab')
+        if not os.path.exists(collocations_path):
+            with open(collocations_path, 'w') as f:
+                f.write("# Empty collocations file for compatibility\n")
         
         return True
     except Exception as e:
         st.error(f"NLTK setup failed: {str(e)}")
         return False
+
+# Alternative text tokenizer for fallback
+def simple_tokenizer(text):
+    """Simple regex-based tokenizer as fallback when NLTK fails"""
+    tokenizer = RegexpTokenizer(r'\w+')
+    return tokenizer.tokenize(text.lower())
 
 def extract_text_from_pdf(uploaded_file):
     """Extract text from an uploaded PDF file with efficient memory handling"""
@@ -123,7 +142,7 @@ def extract_words_from_pdf(uploaded_file):
     return words
 
 def preprocess_text(text):
-    """Clean and tokenize text with robust error handling"""
+    """Clean and tokenize text with robust error handling and fallback"""
     if not text:
         return []
     
@@ -132,11 +151,22 @@ def preprocess_text(text):
         text = text.lower()
         # Remove punctuation
         text = text.translate(str.maketrans('', '', string.punctuation))
-        # Tokenize
-        tokens = word_tokenize(text)
+        
+        # Try NLTK tokenization first
+        try:
+            tokens = word_tokenize(text)
+        except Exception:
+            # Fallback to simple tokenizer if NLTK fails
+            tokens = simple_tokenizer(text)
+        
         # Remove stopwords
-        stop_words = set(stopwords.words('english'))
-        tokens = [word for word in tokens if word not in stop_words and len(word) > 2]
+        try:
+            stop_words = set(stopwords.words('english'))
+            tokens = [word for word in tokens if word not in stop_words and len(word) > 2]
+        except Exception:
+            # If stopwords fail, just filter by length
+            tokens = [word for word in tokens if len(word) > 2]
+            
         return tokens
     except Exception as e:
         st.error(f"Error in text preprocessing: {str(e)}")
@@ -493,8 +523,7 @@ def main():
     try:
         # Initialize NLTK resources
         if not setup_nltk_resources():
-            st.error("Critical error: NLTK setup failed. App cannot continue.")
-            return
+            st.warning("NLTK setup had issues. Using fallback text processing methods.")
             
         st.title("📊 Qualitative Data Analysis Tool")
         st.markdown("""

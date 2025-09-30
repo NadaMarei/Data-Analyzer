@@ -23,9 +23,16 @@ import traceback
 import os
 import tempfile
 import time
-from gensim.models import Word2Vec
 import warnings
 warnings.filterwarnings('ignore')
+
+# Optional import for Word2Vec with fallback
+try:
+    from gensim.models import Word2Vec
+    GENSIM_AVAILABLE = True
+except ImportError:
+    GENSIM_AVAILABLE = False
+    st.warning("Gensim library not available. Synonym detection will use basic methods.")
 
 # Set page configuration first to avoid Streamlit rendering issues
 st.set_page_config(
@@ -111,7 +118,11 @@ ARABIC_TRANSLATIONS = {
     # File processing
     "Processing large files. This may take longer...": "جاري معالجة الملفات الكبيرة. قد يستغرق هذا وقتًا أطول...",
     "words": "كلمات",
-    "seconds": "ثواني"
+    "seconds": "ثواني",
+    
+    # Gensim related
+    "Gensim library not available. Synonym detection will use basic methods.": "مكتبة Gensim غير متوفرة. سيستخدم اكتشاف المرادفات طرقًا أساسية.",
+    "Advanced synonym detection requires gensim library. Using basic similarity methods.": "يتطلب الاكتشاف المتقدم للمرادفات مكتبة gensim. استخدام طرق التشابه الأساسية."
 }
 
 def get_arabic_text(english_text):
@@ -264,8 +275,13 @@ def count_words_in_text(text):
     return len(text.split())
 
 def create_word_embeddings(documents):
-    """Create word embeddings using Word2Vec for better synonym detection"""
+    """Create word embeddings using Word2Vec for better synonym detection with fallback"""
     if not documents or not any(documents):
+        return {}
+    
+    # Check if gensim is available
+    if not GENSIM_AVAILABLE:
+        st.warning(get_arabic_text("Advanced synonym detection requires gensim library. Using basic similarity methods."))
         return {}
     
     # Tokenize documents
@@ -299,10 +315,32 @@ def create_word_embeddings(documents):
         st.error(f"Word2Vec training failed: {str(e)}")
         return {}
 
-def find_similar_words(target_word, word_embeddings, threshold=0.7):
-    """Find similar words based on cosine similarity using Word2Vec embeddings"""
+def find_similar_words_basic(target_word, documents, threshold=0.7):
+    """Basic similarity detection using text patterns when Word2Vec is not available"""
     similar_words = []
-    if target_word.lower() in word_embeddings:
+    target_word_lower = target_word.lower()
+    
+    # Simple pattern-based similarity (words that often appear in similar contexts)
+    for doc in documents:
+        sentences = re.split(r'[.!?]+', doc)
+        for sentence in sentences:
+            words_in_sentence = preprocess_text(sentence)
+            if target_word_lower in [w.lower() for w in words_in_sentence]:
+                # Add other words from the same sentence as potential synonyms
+                for word in words_in_sentence:
+                    word_lower = word.lower()
+                    if (word_lower != target_word_lower and 
+                        len(word_lower) > 2 and 
+                        word_lower not in similar_words):
+                        similar_words.append(word_lower)
+    
+    return similar_words[:10]  # Limit to top 10
+
+def find_similar_words(target_word, word_embeddings, threshold=0.7):
+    """Find similar words based on cosine similarity using Word2Vec embeddings with fallback"""
+    similar_words = []
+    
+    if GENSIM_AVAILABLE and word_embeddings and target_word.lower() in word_embeddings:
         target_embedding = word_embeddings[target_word.lower()]
         
         for word, embedding in word_embeddings.items():
@@ -318,6 +356,9 @@ def find_similar_words(target_word, word_embeddings, threshold=0.7):
                         similar_words.append(word)
                 except Exception as e:
                     continue
+    elif not GENSIM_AVAILABLE:
+        # Use basic method when gensim is not available
+        st.info("Using basic synonym detection method")
     
     return similar_words
 
@@ -339,8 +380,12 @@ def count_word_frequencies(text, word_list, word_embeddings=None, use_synonyms=F
             continue
         
         # Detect and count synonyms if enabled
-        if use_synonyms and word_embeddings:
-            similar_words = find_similar_words(word, word_embeddings, threshold)
+        if use_synonyms:
+            if GENSIM_AVAILABLE and word_embeddings:
+                similar_words = find_similar_words(word, word_embeddings, threshold)
+            else:
+                # Use basic method when gensim is not available
+                similar_words = find_similar_words_basic(word, [text], threshold)
             
             # Show detected synonyms in debug mode
             if similar_words and st.session_state.get('debug_mode', False):
@@ -843,6 +888,10 @@ def main():
         *Supports large files up to 1TB with efficient streaming*
         """)
         
+        # Show gensim availability status
+        if not GENSIM_AVAILABLE:
+            st.info("💡 **Note**: For advanced synonym detection, install gensim: `pip install gensim`")
+        
         # Language options
         with st.expander("Language Options", expanded=True):
             include_arabic = st.checkbox("Include Arabic version in reports", value=True)
@@ -886,6 +935,8 @@ def main():
             
             if analysis_mode == "Exact words and detected synonyms":
                 st.info("The system will automatically detect contextually similar words using semantic analysis.")
+                if not GENSIM_AVAILABLE:
+                    st.warning("Basic synonym detection will be used. Install gensim for advanced semantic analysis.")
                 similarity_threshold = st.slider(
                     "Similarity Sensitivity",
                     min_value=0.1,
@@ -979,7 +1030,7 @@ def main():
                     
                     if training_texts:
                         word_embeddings = create_word_embeddings(training_texts)
-                        if not word_embeddings:
+                        if not word_embeddings and GENSIM_AVAILABLE:
                             st.warning("Semantic model creation failed. Using exact words only.")
                             analysis_mode = "Exact words only"
                     else:
@@ -1038,6 +1089,8 @@ def main():
                 
                 if analysis_mode == "Exact words and detected synonyms" and word_embeddings:
                     st.info("✓ Synonym detection was successfully enabled")
+                elif analysis_mode == "Exact words and detected synonyms" and not GENSIM_AVAILABLE:
+                    st.info("✓ Basic synonym detection was used")
                 
                 # Document Statistics
                 st.subheader("Document Statistics")
@@ -1144,10 +1197,12 @@ def main():
             except Exception as e:
                 st.error(f"Analysis failed: {str(e)}")
                 st.error("Please try again or check your files")
-                st.text(traceback.format_exc())
+                if st.session_state.get('debug_mode', False):
+                    st.text(traceback.format_exc())
     except Exception as e:
         st.error(f"Critical application error: {str(e)}")
-        st.text(traceback.format_exc())
+        if st.session_state.get('debug_mode', False):
+            st.text(traceback.format_exc())
 
 if __name__ == "__main__":
     main()

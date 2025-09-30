@@ -39,6 +39,90 @@ st.set_page_config(
 MAX_MEMORY_CHUNK = 50 * 1024 * 1024  # 50MB chunks for large files
 LARGE_FILE_THRESHOLD = 100 * 1024 * 1024  # 100MB
 
+# Arabic translation dictionary
+ARABIC_TRANSLATIONS = {
+    # Document types and sections
+    "Qualitative Data Analysis Report": "تقرير تحليل البيانات النوعية",
+    "Document Statistics": "إحصائيات المستندات",
+    "Summary Report": "التقرير الملخص",
+    "Per-File Analysis": "تحليل لكل ملف",
+    "Export Full Report": "تصدير التقرير الكامل",
+    "Export Data Tables": "تصدير جداول البيانات",
+    
+    # Table headers
+    "Document Type": "نوع المستند",
+    "File Name": "اسم الملف",
+    "Word Count": "عدد الكلمات",
+    "Target Word": "الكلمة المستهدفة",
+    "Frequency Count": "عدد التكرارات",
+    "Percentage": "النسبة المئوية",
+    "Total": "المجموع",
+    
+    # Document types
+    "Target Words": "الكلمات المستهدفة",
+    "Word List": "قائمة الكلمات",
+    "Company Report": "تقرير الشركة",
+    "Reports": "التقارير",
+    
+    # Analysis modes
+    "Exact words only": "الكلمات المطابقة فقط",
+    "Exact words and detected synonyms": "الكلمات المطابقة والمرادفات المكتشفة",
+    
+    # UI elements
+    "Upload Documents": "رفع المستندات",
+    "Company Reports": "تقارير الشركات",
+    "Target Word List": "قائمة الكلمات المستهدفة",
+    "Analysis Options": "خيارات التحليل",
+    "Analysis Mode:": "نمط التحليل:",
+    "Similarity Sensitivity": "حساسية التشابه",
+    "Enable debug mode (shows detected synonyms)": "تفعيل وضع التصحيح (عرض المرادفات المكتشفة)",
+    "Analyze Documents": "تحليل المستندات",
+    "Download PDF Report": "تحميل تقرير PDF",
+    "Download Excel Report": "تحميل تقرير Excel",
+    "Download Summary (CSV)": "تحميل الملخص (CSV)",
+    "Download File Analysis (CSV)": "تحميل تحليل الملفات (CSV)",
+    
+    # Status messages
+    "Processing": "جاري المعالجة",
+    "Analysis complete!": "اكتمل التحليل!",
+    "Extracting word list...": "جاري استخراج قائمة الكلمات...",
+    "Processing company reports...": "جاري معالجة تقارير الشركات...",
+    "Building semantic model...": "جاري بناء النموذج الدلالي...",
+    "Analyzing word frequencies...": "جاري تحليل ترددات الكلمات...",
+    "Preparing reports...": "جاري إعداد التقارير...",
+    
+    # Warnings and info
+    "Please upload at least one company report": "يرجى رفع تقرير شركة واحد على الأقل",
+    "Please upload a word list PDF": "يرجى رفع قائمة كلمات بصيغة PDF",
+    "No valid text extracted from company reports. Please check your PDF files.": "لم يتم استخراج نص صالح من تقارير الشركات. يرجى التحقق من ملفات PDF الخاصة بك.",
+    "Failed to extract target words. Please check your word list PDF.": "فشل في استخراج الكلمات المستهدفة. يرجى التحقق من قائمة الكلمات بصيغة PDF.",
+    "The system will automatically detect contextually similar words using semantic analysis.": "سيقوم النظام تلقائيًا باكتشاف الكلمات المتشابهة سياقيًا باستخدام التحليل الدلالي.",
+    "Higher values detect only very similar words, lower values detect broader synonyms": "القيم الأعلى تكتشف فقط الكلمات المتشابهة جدًا، والقيم الأقل تكتشف مرادفات أوسع",
+    "Semantic model creation failed. Using exact words only.": "فشل إنشاء النموذج الدلالي. استخدام الكلمات المطابقة فقط.",
+    "No valid text for semantic analysis. Using exact words only.": "لا يوجد نص صالح للتحليل الدلالي. استخدام الكلمات المطابقة فقط.",
+    "✓ Synonym detection was successfully enabled": "✓ تم تفعيل اكتشاف المرادفات بنجاح",
+    "No file analysis data available": "لا توجد بيانات تحليل للملفات",
+    "PDF report generation failed": "فشل إنشاء تقرير PDF",
+    "Excel report generation failed": "فشل إنشاء تقرير Excel",
+    "Analysis failed:": "فشل التحليل:",
+    "Please try again or check your files": "يرجى المحاولة مرة أخرى أو التحقق من ملفاتك",
+    "Critical application error:": "خطأ تطبيق حرج:",
+    
+    # File processing
+    "Processing large files. This may take longer...": "جاري معالجة الملفات الكبيرة. قد يستغرق هذا وقتًا أطول...",
+    "words": "كلمات",
+    "seconds": "ثواني"
+}
+
+def get_arabic_text(english_text):
+    """Get Arabic translation for English text, fallback to English if not found"""
+    return ARABIC_TRANSLATIONS.get(english_text, english_text)
+
+def is_arabic_text(text):
+    """Check if text contains Arabic characters"""
+    arabic_range = re.compile('[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF]+')
+    return bool(arabic_range.search(text))
+
 # Robust NLTK resource handling with punkt_tab fix
 def setup_nltk_resources():
     try:
@@ -272,8 +356,8 @@ def count_word_frequencies(text, word_list, word_embeddings=None, use_synonyms=F
     
     return frequencies
 
-def generate_pdf_report(summary_data, file_analysis_data, word_counts, target_words):
-    """Generate professional PDF report in memory"""
+def generate_pdf_report(summary_data, file_analysis_data, word_counts, target_words, include_arabic=True):
+    """Generate professional PDF report in memory with optional Arabic version"""
     try:
         buffer = io.BytesIO()
         doc = SimpleDocTemplate(buffer, pagesize=landscape(letter))
@@ -360,6 +444,92 @@ def generate_pdf_report(summary_data, file_analysis_data, word_counts, target_wo
         ]))
         elements.append(summary_table)
         
+        # Add Arabic version if requested
+        if include_arabic:
+            elements.append(PageBreak())
+            
+            # Arabic Title
+            arabic_title = Paragraph(get_arabic_text("Qualitative Data Analysis Report"), styles['Title'])
+            elements.append(arabic_title)
+            elements.append(Spacer(1, 12))
+            
+            # Arabic Document Statistics Section
+            elements.append(Paragraph(get_arabic_text("Document Statistics"), styles['Heading2']))
+            elements.append(Spacer(1, 8))
+            
+            # Prepare Arabic document stats table
+            arabic_stats_table_data = [
+                [get_arabic_text("Document Type"), get_arabic_text("File Name"), get_arabic_text("Word Count")],
+                [get_arabic_text("Target Words"), get_arabic_text("Word List"), str(word_counts['word_list'])]
+            ]
+            
+            for report in word_counts['reports']:
+                arabic_stats_table_data.append([
+                    get_arabic_text("Company Report"), 
+                    report['name'], 
+                    str(report['word_count'])
+                ])
+            
+            arabic_stats_table_data.append([
+                get_arabic_text("Total"), 
+                f"{len(word_counts['reports'])} {get_arabic_text('Reports')}", 
+                str(word_counts['total_report_words'])
+            ])
+            
+            # Create Arabic stats table
+            arabic_stats_table = Table(arabic_stats_table_data)
+            arabic_stats_table.setStyle(TableStyle([
+                ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor("#2c3e50")),
+                ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+                ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+                ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+                ('FONTSIZE', (0, 0), (-1, 0), 10),
+                ('BOTTOMPADDING', (0, 0), (-1, 0), 6),
+                ('BACKGROUND', (0, 1), (-1, -1), colors.HexColor("#ecf0f1")),
+                ('GRID', (0, 0), (-1, -1), 0.5, colors.black),
+                ('FONTSIZE', (0, 1), (-1, -1), 9),
+                ('ROWBACKGROUNDS', (0, 1), (-1, -1), 
+                 [colors.whitesmoke, colors.HexColor("#f9f9f9")]),
+            ]))
+            elements.append(arabic_stats_table)
+            
+            elements.append(Spacer(1, 24))
+            
+            # Arabic Summary table
+            elements.append(Paragraph(get_arabic_text("Summary Report"), styles['Heading2']))
+            elements.append(Spacer(1, 8))
+            
+            # Prepare Arabic summary table data in the original word order
+            arabic_summary_table_data = [
+                [get_arabic_text("Target Word"), get_arabic_text("Frequency Count"), get_arabic_text("Percentage")]
+            ]
+            for word in target_words:
+                # Find the matching summary data for this word
+                word_data = next((item for item in summary_data if item["Target Word"] == word), None)
+                if word_data:
+                    arabic_summary_table_data.append([
+                        word_data["Target Word"], 
+                        str(word_data["Frequency Count"]), 
+                        f"{word_data['Percentage']:.2f}%"
+                    ])
+            
+            # Create Arabic summary table
+            arabic_summary_table = Table(arabic_summary_table_data)
+            arabic_summary_table.setStyle(TableStyle([
+                ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor("#2c3e50")),
+                ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+                ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+                ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+                ('FONTSIZE', (0, 0), (-1, 0), 10),
+                ('BOTTOMPADDING', (0, 0), (-1, 0), 6),
+                ('BACKGROUND', (0, 1), (-1, -1), colors.HexColor("#ecf0f1")),
+                ('GRID', (0, 0), (-1, -1), 0.5, colors.black),
+                ('FONTSIZE', (0, 1), (-1, -1), 9),
+                ('ROWBACKGROUNDS', (0, 1), (-1, -1), 
+                 [colors.whitesmoke, colors.HexColor("#f9f9f9")]),
+            ]))
+            elements.append(arabic_summary_table)
+        
         # Add space before next section
         elements.append(PageBreak())
         
@@ -401,6 +571,44 @@ def generate_pdf_report(summary_data, file_analysis_data, word_counts, target_wo
                  [colors.whitesmoke, colors.HexColor("#f1f8ff")]),
             ]))
             elements.append(file_table)
+            
+            # Add Arabic version of file analysis if requested
+            if include_arabic:
+                elements.append(PageBreak())
+                elements.append(Paragraph(get_arabic_text("Per-File Analysis"), styles['Heading2']))
+                elements.append(Spacer(1, 8))
+                
+                # Prepare Arabic file analysis table
+                arabic_file_table_data = [[get_arabic_text("Target Word")] + list(file_names) + [get_arabic_text("Total")]]
+                
+                for word in target_words:
+                    if word in file_analysis_data:
+                        counts = file_analysis_data[word]
+                        row = [word]
+                        total = 0
+                        for file_name in file_names:
+                            count = counts.get(file_name, 0)
+                            row.append(str(count))
+                            total += count
+                        row.append(str(total))
+                        arabic_file_table_data.append(row)
+                
+                # Create Arabic file analysis table
+                arabic_file_table = Table(arabic_file_table_data)
+                arabic_file_table.setStyle(TableStyle([
+                    ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor("#3498db")),
+                    ('TEXTCOLOR', (0, 0), (-1, 0), colors.black),
+                    ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+                    ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+                    ('FONTSIZE', (0, 0), (-1, 0), 10),
+                    ('BOTTOMPADDING', (0, 0), (-1, 0), 6),
+                    ('BACKGROUND', (0, 1), (-1, -1), colors.HexColor("#f8f9fa")),
+                    ('GRID', (0, 0), (-1, -1), 0.5, colors.black),
+                    ('FONTSIZE', (0, 1), (-1, -1), 9),
+                    ('ROWBACKGROUNDS', (0, 1), (-1, -1), 
+                     [colors.whitesmoke, colors.HexColor("#f1f8ff")]),
+                ]))
+                elements.append(arabic_file_table)
         
         doc.build(elements)
         buffer.seek(0)
@@ -409,8 +617,8 @@ def generate_pdf_report(summary_data, file_analysis_data, word_counts, target_wo
         st.error(f"PDF generation failed: {str(e)}")
         return None
 
-def generate_excel_report(summary_data, file_analysis_data, word_counts, target_words):
-    """Generate Excel report with multiple sheets in memory"""
+def generate_excel_report(summary_data, file_analysis_data, word_counts, target_words, include_arabic=True):
+    """Generate Excel report with multiple sheets in memory with optional Arabic version"""
     try:
         buffer = io.BytesIO()
         
@@ -516,6 +724,100 @@ def generate_excel_report(summary_data, file_analysis_data, word_counts, target_
                     cell.border = border
                     cell.alignment = center_aligned
         
+        # Add Arabic version sheets if requested
+        if include_arabic:
+            # Arabic Document Statistics Sheet
+            ws_arabic_stats = wb.create_sheet(title=get_arabic_text("Document Statistics"))
+            
+            # Prepare Arabic stats data
+            arabic_stats_data = [
+                [get_arabic_text("Document Type"), get_arabic_text("File Name"), get_arabic_text("Word Count")],
+                [get_arabic_text("Target Words"), get_arabic_text("Word List"), word_counts['word_list']]
+            ]
+            
+            for report in word_counts['reports']:
+                arabic_stats_data.append([get_arabic_text("Company Report"), report['name'], report['word_count']])
+            
+            arabic_stats_data.append([
+                get_arabic_text("Total"), 
+                f"{len(word_counts['reports'])} {get_arabic_text('Reports')}", 
+                word_counts['total_report_words']
+            ])
+            
+            # Add Arabic data to sheet
+            for row in arabic_stats_data:
+                ws_arabic_stats.append(row)
+            
+            # Format Arabic stats sheet
+            for cell in ws_arabic_stats[1]:
+                cell.fill = header_fill
+                cell.font = header_font
+                cell.alignment = center_aligned
+            
+            for row in ws_arabic_stats.iter_rows(min_row=2, max_row=len(arabic_stats_data)):
+                for cell in row:
+                    cell.border = border
+                    cell.alignment = center_aligned
+            
+            # Arabic Summary Report Sheet
+            ws_arabic_summary = wb.create_sheet(title=get_arabic_text("Summary Report"))
+            
+            # Prepare Arabic summary data
+            arabic_summary_headers = [get_arabic_text("Target Word"), get_arabic_text("Frequency Count"), get_arabic_text("Percentage")]
+            ws_arabic_summary.append(arabic_summary_headers)
+            
+            for word in target_words:
+                word_data = next((item for item in summary_data if item["Target Word"] == word), None)
+                if word_data:
+                    ws_arabic_summary.append([
+                        word_data["Target Word"], 
+                        word_data["Frequency Count"], 
+                        word_data["Percentage"]
+                    ])
+            
+            # Format Arabic summary sheet
+            for cell in ws_arabic_summary[1]:
+                cell.fill = header_fill
+                cell.font = header_font
+                cell.alignment = center_aligned
+            
+            for row in ws_arabic_summary.iter_rows(min_row=2, max_row=len(target_words)+1):
+                for cell in row:
+                    cell.border = border
+                    cell.alignment = center_aligned
+            
+            # Arabic Per-File Analysis Sheet
+            if file_analysis_data:
+                ws_arabic_analysis = wb.create_sheet(title=get_arabic_text("Per-File Analysis"))
+                
+                # Prepare Arabic headers
+                arabic_headers = [get_arabic_text("Target Word")] + list(file_names) + [get_arabic_text("Total")]
+                ws_arabic_analysis.append(arabic_headers)
+                
+                # Add Arabic data
+                for word in target_words:
+                    if word in file_analysis_data:
+                        counts = file_analysis_data[word]
+                        row = [word]
+                        total = 0
+                        for file_name in file_names:
+                            count = counts.get(file_name, 0)
+                            row.append(count)
+                            total += count
+                        row.append(total)
+                        ws_arabic_analysis.append(row)
+                
+                # Format Arabic analysis sheet
+                for cell in ws_arabic_analysis[1]:
+                    cell.fill = PatternFill(start_color="3498DB", end_color="3498DB", fill_type="solid")
+                    cell.font = Font(bold=True)
+                    cell.alignment = center_aligned
+                
+                for row in ws_arabic_analysis.iter_rows(min_row=2, max_row=len(target_words)+1):
+                    for cell in row:
+                        cell.border = border
+                        cell.alignment = center_aligned
+        
         # Save to buffer
         wb.save(buffer)
         buffer.seek(0)
@@ -540,6 +842,11 @@ def main():
         **Upload company reports and a word list to analyze word frequencies across documents.**
         *Supports large files up to 1TB with efficient streaming*
         """)
+        
+        # Language options
+        with st.expander("Language Options", expanded=True):
+            include_arabic = st.checkbox("Include Arabic version in reports", value=True)
+            st.info("When enabled, all reports will include both English and Arabic versions of the analysis.")
         
         # Debug mode toggle
         if st.checkbox("Enable debug mode (shows detected synonyms)"):
@@ -772,11 +1079,11 @@ def main():
                 
                 # Generate reports in memory
                 with st.spinner("Preparing reports..."):
-                    # Generate PDF report in memory - pass target_words for ordering
-                    pdf_buffer = generate_pdf_report(summary_data, file_analysis, document_stats, target_words)
+                    # Generate PDF report in memory - pass target_words for ordering and include_arabic flag
+                    pdf_buffer = generate_pdf_report(summary_data, file_analysis, document_stats, target_words, include_arabic)
                     
-                    # Generate Excel report in memory - pass target_words for ordering
-                    excel_buffer = generate_excel_report(summary_data, file_analysis, document_stats, target_words)
+                    # Generate Excel report in memory - pass target_words for ordering and include_arabic flag
+                    excel_buffer = generate_excel_report(summary_data, file_analysis, document_stats, target_words, include_arabic)
                 
                 if pdf_buffer:
                     with col1:

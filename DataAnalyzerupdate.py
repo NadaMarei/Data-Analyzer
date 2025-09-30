@@ -23,16 +23,9 @@ import traceback
 import os
 import tempfile
 import time
+from gensim.models import Word2Vec
 import warnings
 warnings.filterwarnings('ignore')
-
-# Optional import for Word2Vec with fallback
-try:
-    from gensim.models import Word2Vec
-    GENSIM_AVAILABLE = True
-except ImportError:
-    GENSIM_AVAILABLE = False
-    st.warning("Gensim library not available. Synonym detection will use basic methods.")
 
 # Set page configuration first to avoid Streamlit rendering issues
 st.set_page_config(
@@ -45,94 +38,6 @@ st.set_page_config(
 # Constants
 MAX_MEMORY_CHUNK = 50 * 1024 * 1024  # 50MB chunks for large files
 LARGE_FILE_THRESHOLD = 100 * 1024 * 1024  # 100MB
-
-# Arabic translation dictionary
-ARABIC_TRANSLATIONS = {
-    # Document types and sections
-    "Qualitative Data Analysis Report": "تقرير تحليل البيانات النوعية",
-    "Document Statistics": "إحصائيات المستندات",
-    "Summary Report": "التقرير الملخص",
-    "Per-File Analysis": "تحليل لكل ملف",
-    "Export Full Report": "تصدير التقرير الكامل",
-    "Export Data Tables": "تصدير جداول البيانات",
-    
-    # Table headers
-    "Document Type": "نوع المستند",
-    "File Name": "اسم الملف",
-    "Word Count": "عدد الكلمات",
-    "Target Word": "الكلمة المستهدفة",
-    "Frequency Count": "عدد التكرارات",
-    "Percentage": "النسبة المئوية",
-    "Total": "المجموع",
-    
-    # Document types
-    "Target Words": "الكلمات المستهدفة",
-    "Word List": "قائمة الكلمات",
-    "Company Report": "تقرير الشركة",
-    "Reports": "التقارير",
-    
-    # Analysis modes
-    "Exact words only": "الكلمات المطابقة فقط",
-    "Exact words and detected synonyms": "الكلمات المطابقة والمرادفات المكتشفة",
-    
-    # UI elements
-    "Upload Documents": "رفع المستندات",
-    "Company Reports": "تقارير الشركات",
-    "Target Word List": "قائمة الكلمات المستهدفة",
-    "Analysis Options": "خيارات التحليل",
-    "Analysis Mode:": "نمط التحليل:",
-    "Similarity Sensitivity": "حساسية التشابه",
-    "Enable debug mode (shows detected synonyms)": "تفعيل وضع التصحيح (عرض المرادفات المكتشفة)",
-    "Analyze Documents": "تحليل المستندات",
-    "Download PDF Report": "تحميل تقرير PDF",
-    "Download Excel Report": "تحميل تقرير Excel",
-    "Download Summary (CSV)": "تحميل الملخص (CSV)",
-    "Download File Analysis (CSV)": "تحميل تحليل الملفات (CSV)",
-    
-    # Status messages
-    "Processing": "جاري المعالجة",
-    "Analysis complete!": "اكتمل التحليل!",
-    "Extracting word list...": "جاري استخراج قائمة الكلمات...",
-    "Processing company reports...": "جاري معالجة تقارير الشركات...",
-    "Building semantic model...": "جاري بناء النموذج الدلالي...",
-    "Analyzing word frequencies...": "جاري تحليل ترددات الكلمات...",
-    "Preparing reports...": "جاري إعداد التقارير...",
-    
-    # Warnings and info
-    "Please upload at least one company report": "يرجى رفع تقرير شركة واحد على الأقل",
-    "Please upload a word list PDF": "يرجى رفع قائمة كلمات بصيغة PDF",
-    "No valid text extracted from company reports. Please check your PDF files.": "لم يتم استخراج نص صالح من تقارير الشركات. يرجى التحقق من ملفات PDF الخاصة بك.",
-    "Failed to extract target words. Please check your word list PDF.": "فشل في استخراج الكلمات المستهدفة. يرجى التحقق من قائمة الكلمات بصيغة PDF.",
-    "The system will automatically detect contextually similar words using semantic analysis.": "سيقوم النظام تلقائيًا باكتشاف الكلمات المتشابهة سياقيًا باستخدام التحليل الدلالي.",
-    "Higher values detect only very similar words, lower values detect broader synonyms": "القيم الأعلى تكتشف فقط الكلمات المتشابهة جدًا، والقيم الأقل تكتشف مرادفات أوسع",
-    "Semantic model creation failed. Using exact words only.": "فشل إنشاء النموذج الدلالي. استخدام الكلمات المطابقة فقط.",
-    "No valid text for semantic analysis. Using exact words only.": "لا يوجد نص صالح للتحليل الدلالي. استخدام الكلمات المطابقة فقط.",
-    "✓ Synonym detection was successfully enabled": "✓ تم تفعيل اكتشاف المرادفات بنجاح",
-    "No file analysis data available": "لا توجد بيانات تحليل للملفات",
-    "PDF report generation failed": "فشل إنشاء تقرير PDF",
-    "Excel report generation failed": "فشل إنشاء تقرير Excel",
-    "Analysis failed:": "فشل التحليل:",
-    "Please try again or check your files": "يرجى المحاولة مرة أخرى أو التحقق من ملفاتك",
-    "Critical application error:": "خطأ تطبيق حرج:",
-    
-    # File processing
-    "Processing large files. This may take longer...": "جاري معالجة الملفات الكبيرة. قد يستغرق هذا وقتًا أطول...",
-    "words": "كلمات",
-    "seconds": "ثواني",
-    
-    # Gensim related
-    "Gensim library not available. Synonym detection will use basic methods.": "مكتبة Gensim غير متوفرة. سيستخدم اكتشاف المرادفات طرقًا أساسية.",
-    "Advanced synonym detection requires gensim library. Using basic similarity methods.": "يتطلب الاكتشاف المتقدم للمرادفات مكتبة gensim. استخدام طرق التشابه الأساسية."
-}
-
-def get_arabic_text(english_text):
-    """Get Arabic translation for English text, fallback to English if not found"""
-    return ARABIC_TRANSLATIONS.get(english_text, english_text)
-
-def is_arabic_text(text):
-    """Check if text contains Arabic characters"""
-    arabic_range = re.compile('[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF]+')
-    return bool(arabic_range.search(text))
 
 # Robust NLTK resource handling with punkt_tab fix
 def setup_nltk_resources():
@@ -275,13 +180,8 @@ def count_words_in_text(text):
     return len(text.split())
 
 def create_word_embeddings(documents):
-    """Create word embeddings using Word2Vec for better synonym detection with fallback"""
+    """Create word embeddings using Word2Vec for better synonym detection"""
     if not documents or not any(documents):
-        return {}
-    
-    # Check if gensim is available
-    if not GENSIM_AVAILABLE:
-        st.warning(get_arabic_text("Advanced synonym detection requires gensim library. Using basic similarity methods."))
         return {}
     
     # Tokenize documents
@@ -315,32 +215,10 @@ def create_word_embeddings(documents):
         st.error(f"Word2Vec training failed: {str(e)}")
         return {}
 
-def find_similar_words_basic(target_word, documents, threshold=0.7):
-    """Basic similarity detection using text patterns when Word2Vec is not available"""
-    similar_words = []
-    target_word_lower = target_word.lower()
-    
-    # Simple pattern-based similarity (words that often appear in similar contexts)
-    for doc in documents:
-        sentences = re.split(r'[.!?]+', doc)
-        for sentence in sentences:
-            words_in_sentence = preprocess_text(sentence)
-            if target_word_lower in [w.lower() for w in words_in_sentence]:
-                # Add other words from the same sentence as potential synonyms
-                for word in words_in_sentence:
-                    word_lower = word.lower()
-                    if (word_lower != target_word_lower and 
-                        len(word_lower) > 2 and 
-                        word_lower not in similar_words):
-                        similar_words.append(word_lower)
-    
-    return similar_words[:10]  # Limit to top 10
-
 def find_similar_words(target_word, word_embeddings, threshold=0.7):
-    """Find similar words based on cosine similarity using Word2Vec embeddings with fallback"""
+    """Find similar words based on cosine similarity using Word2Vec embeddings"""
     similar_words = []
-    
-    if GENSIM_AVAILABLE and word_embeddings and target_word.lower() in word_embeddings:
+    if target_word.lower() in word_embeddings:
         target_embedding = word_embeddings[target_word.lower()]
         
         for word, embedding in word_embeddings.items():
@@ -356,9 +234,6 @@ def find_similar_words(target_word, word_embeddings, threshold=0.7):
                         similar_words.append(word)
                 except Exception as e:
                     continue
-    elif not GENSIM_AVAILABLE:
-        # Use basic method when gensim is not available
-        st.info("Using basic synonym detection method")
     
     return similar_words
 
@@ -380,12 +255,8 @@ def count_word_frequencies(text, word_list, word_embeddings=None, use_synonyms=F
             continue
         
         # Detect and count synonyms if enabled
-        if use_synonyms:
-            if GENSIM_AVAILABLE and word_embeddings:
-                similar_words = find_similar_words(word, word_embeddings, threshold)
-            else:
-                # Use basic method when gensim is not available
-                similar_words = find_similar_words_basic(word, [text], threshold)
+        if use_synonyms and word_embeddings:
+            similar_words = find_similar_words(word, word_embeddings, threshold)
             
             # Show detected synonyms in debug mode
             if similar_words and st.session_state.get('debug_mode', False):
@@ -401,8 +272,8 @@ def count_word_frequencies(text, word_list, word_embeddings=None, use_synonyms=F
     
     return frequencies
 
-def generate_pdf_report(summary_data, file_analysis_data, word_counts, target_words, include_arabic=True):
-    """Generate professional PDF report in memory with optional Arabic version"""
+def generate_pdf_report(summary_data, file_analysis_data, word_counts, target_words):
+    """Generate professional PDF report in memory"""
     try:
         buffer = io.BytesIO()
         doc = SimpleDocTemplate(buffer, pagesize=landscape(letter))
@@ -489,92 +360,6 @@ def generate_pdf_report(summary_data, file_analysis_data, word_counts, target_wo
         ]))
         elements.append(summary_table)
         
-        # Add Arabic version if requested
-        if include_arabic:
-            elements.append(PageBreak())
-            
-            # Arabic Title
-            arabic_title = Paragraph(get_arabic_text("Qualitative Data Analysis Report"), styles['Title'])
-            elements.append(arabic_title)
-            elements.append(Spacer(1, 12))
-            
-            # Arabic Document Statistics Section
-            elements.append(Paragraph(get_arabic_text("Document Statistics"), styles['Heading2']))
-            elements.append(Spacer(1, 8))
-            
-            # Prepare Arabic document stats table
-            arabic_stats_table_data = [
-                [get_arabic_text("Document Type"), get_arabic_text("File Name"), get_arabic_text("Word Count")],
-                [get_arabic_text("Target Words"), get_arabic_text("Word List"), str(word_counts['word_list'])]
-            ]
-            
-            for report in word_counts['reports']:
-                arabic_stats_table_data.append([
-                    get_arabic_text("Company Report"), 
-                    report['name'], 
-                    str(report['word_count'])
-                ])
-            
-            arabic_stats_table_data.append([
-                get_arabic_text("Total"), 
-                f"{len(word_counts['reports'])} {get_arabic_text('Reports')}", 
-                str(word_counts['total_report_words'])
-            ])
-            
-            # Create Arabic stats table
-            arabic_stats_table = Table(arabic_stats_table_data)
-            arabic_stats_table.setStyle(TableStyle([
-                ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor("#2c3e50")),
-                ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
-                ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
-                ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-                ('FONTSIZE', (0, 0), (-1, 0), 10),
-                ('BOTTOMPADDING', (0, 0), (-1, 0), 6),
-                ('BACKGROUND', (0, 1), (-1, -1), colors.HexColor("#ecf0f1")),
-                ('GRID', (0, 0), (-1, -1), 0.5, colors.black),
-                ('FONTSIZE', (0, 1), (-1, -1), 9),
-                ('ROWBACKGROUNDS', (0, 1), (-1, -1), 
-                 [colors.whitesmoke, colors.HexColor("#f9f9f9")]),
-            ]))
-            elements.append(arabic_stats_table)
-            
-            elements.append(Spacer(1, 24))
-            
-            # Arabic Summary table
-            elements.append(Paragraph(get_arabic_text("Summary Report"), styles['Heading2']))
-            elements.append(Spacer(1, 8))
-            
-            # Prepare Arabic summary table data in the original word order
-            arabic_summary_table_data = [
-                [get_arabic_text("Target Word"), get_arabic_text("Frequency Count"), get_arabic_text("Percentage")]
-            ]
-            for word in target_words:
-                # Find the matching summary data for this word
-                word_data = next((item for item in summary_data if item["Target Word"] == word), None)
-                if word_data:
-                    arabic_summary_table_data.append([
-                        word_data["Target Word"], 
-                        str(word_data["Frequency Count"]), 
-                        f"{word_data['Percentage']:.2f}%"
-                    ])
-            
-            # Create Arabic summary table
-            arabic_summary_table = Table(arabic_summary_table_data)
-            arabic_summary_table.setStyle(TableStyle([
-                ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor("#2c3e50")),
-                ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
-                ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
-                ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-                ('FONTSIZE', (0, 0), (-1, 0), 10),
-                ('BOTTOMPADDING', (0, 0), (-1, 0), 6),
-                ('BACKGROUND', (0, 1), (-1, -1), colors.HexColor("#ecf0f1")),
-                ('GRID', (0, 0), (-1, -1), 0.5, colors.black),
-                ('FONTSIZE', (0, 1), (-1, -1), 9),
-                ('ROWBACKGROUNDS', (0, 1), (-1, -1), 
-                 [colors.whitesmoke, colors.HexColor("#f9f9f9")]),
-            ]))
-            elements.append(arabic_summary_table)
-        
         # Add space before next section
         elements.append(PageBreak())
         
@@ -616,44 +401,6 @@ def generate_pdf_report(summary_data, file_analysis_data, word_counts, target_wo
                  [colors.whitesmoke, colors.HexColor("#f1f8ff")]),
             ]))
             elements.append(file_table)
-            
-            # Add Arabic version of file analysis if requested
-            if include_arabic:
-                elements.append(PageBreak())
-                elements.append(Paragraph(get_arabic_text("Per-File Analysis"), styles['Heading2']))
-                elements.append(Spacer(1, 8))
-                
-                # Prepare Arabic file analysis table
-                arabic_file_table_data = [[get_arabic_text("Target Word")] + list(file_names) + [get_arabic_text("Total")]]
-                
-                for word in target_words:
-                    if word in file_analysis_data:
-                        counts = file_analysis_data[word]
-                        row = [word]
-                        total = 0
-                        for file_name in file_names:
-                            count = counts.get(file_name, 0)
-                            row.append(str(count))
-                            total += count
-                        row.append(str(total))
-                        arabic_file_table_data.append(row)
-                
-                # Create Arabic file analysis table
-                arabic_file_table = Table(arabic_file_table_data)
-                arabic_file_table.setStyle(TableStyle([
-                    ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor("#3498db")),
-                    ('TEXTCOLOR', (0, 0), (-1, 0), colors.black),
-                    ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
-                    ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-                    ('FONTSIZE', (0, 0), (-1, 0), 10),
-                    ('BOTTOMPADDING', (0, 0), (-1, 0), 6),
-                    ('BACKGROUND', (0, 1), (-1, -1), colors.HexColor("#f8f9fa")),
-                    ('GRID', (0, 0), (-1, -1), 0.5, colors.black),
-                    ('FONTSIZE', (0, 1), (-1, -1), 9),
-                    ('ROWBACKGROUNDS', (0, 1), (-1, -1), 
-                     [colors.whitesmoke, colors.HexColor("#f1f8ff")]),
-                ]))
-                elements.append(arabic_file_table)
         
         doc.build(elements)
         buffer.seek(0)
@@ -662,8 +409,8 @@ def generate_pdf_report(summary_data, file_analysis_data, word_counts, target_wo
         st.error(f"PDF generation failed: {str(e)}")
         return None
 
-def generate_excel_report(summary_data, file_analysis_data, word_counts, target_words, include_arabic=True):
-    """Generate Excel report with multiple sheets in memory with optional Arabic version"""
+def generate_excel_report(summary_data, file_analysis_data, word_counts, target_words):
+    """Generate Excel report with multiple sheets in memory"""
     try:
         buffer = io.BytesIO()
         
@@ -769,100 +516,6 @@ def generate_excel_report(summary_data, file_analysis_data, word_counts, target_
                     cell.border = border
                     cell.alignment = center_aligned
         
-        # Add Arabic version sheets if requested
-        if include_arabic:
-            # Arabic Document Statistics Sheet
-            ws_arabic_stats = wb.create_sheet(title=get_arabic_text("Document Statistics"))
-            
-            # Prepare Arabic stats data
-            arabic_stats_data = [
-                [get_arabic_text("Document Type"), get_arabic_text("File Name"), get_arabic_text("Word Count")],
-                [get_arabic_text("Target Words"), get_arabic_text("Word List"), word_counts['word_list']]
-            ]
-            
-            for report in word_counts['reports']:
-                arabic_stats_data.append([get_arabic_text("Company Report"), report['name'], report['word_count']])
-            
-            arabic_stats_data.append([
-                get_arabic_text("Total"), 
-                f"{len(word_counts['reports'])} {get_arabic_text('Reports')}", 
-                word_counts['total_report_words']
-            ])
-            
-            # Add Arabic data to sheet
-            for row in arabic_stats_data:
-                ws_arabic_stats.append(row)
-            
-            # Format Arabic stats sheet
-            for cell in ws_arabic_stats[1]:
-                cell.fill = header_fill
-                cell.font = header_font
-                cell.alignment = center_aligned
-            
-            for row in ws_arabic_stats.iter_rows(min_row=2, max_row=len(arabic_stats_data)):
-                for cell in row:
-                    cell.border = border
-                    cell.alignment = center_aligned
-            
-            # Arabic Summary Report Sheet
-            ws_arabic_summary = wb.create_sheet(title=get_arabic_text("Summary Report"))
-            
-            # Prepare Arabic summary data
-            arabic_summary_headers = [get_arabic_text("Target Word"), get_arabic_text("Frequency Count"), get_arabic_text("Percentage")]
-            ws_arabic_summary.append(arabic_summary_headers)
-            
-            for word in target_words:
-                word_data = next((item for item in summary_data if item["Target Word"] == word), None)
-                if word_data:
-                    ws_arabic_summary.append([
-                        word_data["Target Word"], 
-                        word_data["Frequency Count"], 
-                        word_data["Percentage"]
-                    ])
-            
-            # Format Arabic summary sheet
-            for cell in ws_arabic_summary[1]:
-                cell.fill = header_fill
-                cell.font = header_font
-                cell.alignment = center_aligned
-            
-            for row in ws_arabic_summary.iter_rows(min_row=2, max_row=len(target_words)+1):
-                for cell in row:
-                    cell.border = border
-                    cell.alignment = center_aligned
-            
-            # Arabic Per-File Analysis Sheet
-            if file_analysis_data:
-                ws_arabic_analysis = wb.create_sheet(title=get_arabic_text("Per-File Analysis"))
-                
-                # Prepare Arabic headers
-                arabic_headers = [get_arabic_text("Target Word")] + list(file_names) + [get_arabic_text("Total")]
-                ws_arabic_analysis.append(arabic_headers)
-                
-                # Add Arabic data
-                for word in target_words:
-                    if word in file_analysis_data:
-                        counts = file_analysis_data[word]
-                        row = [word]
-                        total = 0
-                        for file_name in file_names:
-                            count = counts.get(file_name, 0)
-                            row.append(count)
-                            total += count
-                        row.append(total)
-                        ws_arabic_analysis.append(row)
-                
-                # Format Arabic analysis sheet
-                for cell in ws_arabic_analysis[1]:
-                    cell.fill = PatternFill(start_color="3498DB", end_color="3498DB", fill_type="solid")
-                    cell.font = Font(bold=True)
-                    cell.alignment = center_aligned
-                
-                for row in ws_arabic_analysis.iter_rows(min_row=2, max_row=len(target_words)+1):
-                    for cell in row:
-                        cell.border = border
-                        cell.alignment = center_aligned
-        
         # Save to buffer
         wb.save(buffer)
         buffer.seek(0)
@@ -887,15 +540,6 @@ def main():
         **Upload company reports and a word list to analyze word frequencies across documents.**
         *Supports large files up to 1TB with efficient streaming*
         """)
-        
-        # Show gensim availability status
-        if not GENSIM_AVAILABLE:
-            st.info("💡 **Note**: For advanced synonym detection, install gensim: `pip install gensim`")
-        
-        # Language options
-        with st.expander("Language Options", expanded=True):
-            include_arabic = st.checkbox("Include Arabic version in reports", value=True)
-            st.info("When enabled, all reports will include both English and Arabic versions of the analysis.")
         
         # Debug mode toggle
         if st.checkbox("Enable debug mode (shows detected synonyms)"):
@@ -935,8 +579,6 @@ def main():
             
             if analysis_mode == "Exact words and detected synonyms":
                 st.info("The system will automatically detect contextually similar words using semantic analysis.")
-                if not GENSIM_AVAILABLE:
-                    st.warning("Basic synonym detection will be used. Install gensim for advanced semantic analysis.")
                 similarity_threshold = st.slider(
                     "Similarity Sensitivity",
                     min_value=0.1,
@@ -1030,7 +672,7 @@ def main():
                     
                     if training_texts:
                         word_embeddings = create_word_embeddings(training_texts)
-                        if not word_embeddings and GENSIM_AVAILABLE:
+                        if not word_embeddings:
                             st.warning("Semantic model creation failed. Using exact words only.")
                             analysis_mode = "Exact words only"
                     else:
@@ -1089,8 +731,6 @@ def main():
                 
                 if analysis_mode == "Exact words and detected synonyms" and word_embeddings:
                     st.info("✓ Synonym detection was successfully enabled")
-                elif analysis_mode == "Exact words and detected synonyms" and not GENSIM_AVAILABLE:
-                    st.info("✓ Basic synonym detection was used")
                 
                 # Document Statistics
                 st.subheader("Document Statistics")
@@ -1132,11 +772,11 @@ def main():
                 
                 # Generate reports in memory
                 with st.spinner("Preparing reports..."):
-                    # Generate PDF report in memory - pass target_words for ordering and include_arabic flag
-                    pdf_buffer = generate_pdf_report(summary_data, file_analysis, document_stats, target_words, include_arabic)
+                    # Generate PDF report in memory - pass target_words for ordering
+                    pdf_buffer = generate_pdf_report(summary_data, file_analysis, document_stats, target_words)
                     
-                    # Generate Excel report in memory - pass target_words for ordering and include_arabic flag
-                    excel_buffer = generate_excel_report(summary_data, file_analysis, document_stats, target_words, include_arabic)
+                    # Generate Excel report in memory - pass target_words for ordering
+                    excel_buffer = generate_excel_report(summary_data, file_analysis, document_stats, target_words)
                 
                 if pdf_buffer:
                     with col1:
@@ -1197,12 +837,10 @@ def main():
             except Exception as e:
                 st.error(f"Analysis failed: {str(e)}")
                 st.error("Please try again or check your files")
-                if st.session_state.get('debug_mode', False):
-                    st.text(traceback.format_exc())
+                st.text(traceback.format_exc())
     except Exception as e:
         st.error(f"Critical application error: {str(e)}")
-        if st.session_state.get('debug_mode', False):
-            st.text(traceback.format_exc())
+        st.text(traceback.format_exc())
 
 if __name__ == "__main__":
     main()

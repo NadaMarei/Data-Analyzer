@@ -114,7 +114,8 @@ ARABIC_TRANSLATIONS = {
     
     # Synonym detection
     "Using context-based synonym detection": "استخدام اكتشاف المرادفات القائم على السياق",
-    "Basic synonym detection using co-occurrence patterns": "اكتشاف المرادفات الأساسي باستخدام أنماط التكامل"
+    "Basic synonym detection using co-occurrence patterns": "اكتشاف المرادفات الأساسي باستخدام أنماط التكامل",
+    "Using TF-IDF based semantic analysis": "استخدام التحليل الدلالي القائم على TF-IDF"
 }
 
 def get_arabic_text(english_text):
@@ -267,27 +268,62 @@ def count_words_in_text(text):
     return len(text.split())
 
 def create_semantic_model(documents):
-    """Create a simple semantic model using TF-IDF and cosine similarity"""
+    """Create a simple semantic model using TF-IDF and cosine similarity with robust error handling"""
     if not documents or not any(documents):
         return None
     
     try:
-        # Create TF-IDF vectorizer
+        # Preprocess documents to ensure they have content
+        processed_docs = []
+        for doc in documents:
+            if doc and len(doc.strip()) > 0:
+                processed_docs.append(doc)
+        
+        if len(processed_docs) < 2:
+            st.warning(f"Not enough documents for semantic analysis. Found {len(processed_docs)} valid documents.")
+            return None
+        
+        # Calculate optimal parameters based on document count
+        num_docs = len(processed_docs)
+        
+        # Adaptive parameters based on document size
+        max_features = min(1000, num_docs * 50)  # Scale features with documents
+        min_df = max(1, num_docs // 10)  # Minimum documents for a word
+        max_df = 0.95  # Words that appear in almost all documents
+        
+        # Ensure min_df is not greater than number of documents
+        min_df = min(min_df, num_docs - 1) if num_docs > 1 else 1
+        
+        st.info(f"Creating semantic model with {num_docs} documents, min_df={min_df}, max_features={max_features}")
+        
+        # Create TF-IDF vectorizer with adaptive parameters
         vectorizer = TfidfVectorizer(
-            max_features=1000,
-            min_df=2,
-            max_df=0.8,
-            stop_words='english'
+            max_features=max_features,
+            min_df=min_df,
+            max_df=max_df,
+            stop_words='english',
+            lowercase=True,
+            analyzer='word'
         )
         
         # Fit and transform the documents
-        tfidf_matrix = vectorizer.fit_transform(documents)
+        tfidf_matrix = vectorizer.fit_transform(processed_docs)
+        
+        # Check if we have any features
+        if tfidf_matrix.shape[1] == 0:
+            st.warning("No features extracted from documents. Semantic model creation failed.")
+            return None
         
         return {
             'vectorizer': vectorizer,
             'tfidf_matrix': tfidf_matrix,
-            'feature_names': vectorizer.get_feature_names_out()
+            'feature_names': vectorizer.get_feature_names_out(),
+            'num_docs': num_docs
         }
+        
+    except ValueError as e:
+        st.warning(f"Semantic model parameter issue: {str(e)}. Using context-based detection.")
+        return None
     except Exception as e:
         st.error(f"Semantic model creation failed: {str(e)}")
         return None
@@ -314,20 +350,27 @@ def find_similar_words_semantic(target_word, semantic_model, threshold=0.7):
         # Calculate cosine similarities
         target_vector = tfidf_matrix[:, target_idx].toarray().flatten()
         
+        # If target vector is all zeros, return empty list
+        if np.linalg.norm(target_vector) == 0:
+            return similar_words
+        
+        similarities = []
         for i, word in enumerate(feature_names):
             if word != target_word.lower():
                 word_vector = tfidf_matrix[:, i].toarray().flatten()
                 
                 # Calculate cosine similarity
-                if np.linalg.norm(target_vector) > 0 and np.linalg.norm(word_vector) > 0:
+                if np.linalg.norm(word_vector) > 0:
                     similarity = np.dot(target_vector, word_vector) / (
                         np.linalg.norm(target_vector) * np.linalg.norm(word_vector)
                     )
-                    
-                    if similarity > threshold:
-                        similar_words.append(word)
+                    similarities.append((word, similarity))
         
-        return similar_words
+        # Sort by similarity and filter by threshold
+        similarities.sort(key=lambda x: x[1], reverse=True)
+        similar_words = [word for word, sim in similarities if sim > threshold]
+        
+        return similar_words[:20]  # Limit to top 20
     
     except Exception as e:
         st.error(f"Semantic similarity search failed: {str(e)}")
@@ -343,6 +386,7 @@ def find_similar_words_context(target_word, documents, threshold=0.7):
     total_cooccurrences = 0
     
     for doc in documents:
+        # Split into sentences
         sentences = re.split(r'[.!?]+', doc.lower())
         for sentence in sentences:
             words_in_sentence = preprocess_text(sentence)
@@ -357,10 +401,14 @@ def find_similar_words_context(target_word, documents, threshold=0.7):
     if total_cooccurrences > 0:
         for word, count in context_words.items():
             score = count / total_cooccurrences
-            if score > threshold / 10:  # Adjust threshold for co-occurrence
-                similar_words.append(word)
+            # Adjust threshold for co-occurrence (typically lower values)
+            cooccurrence_threshold = threshold / 5
+            if score > cooccurrence_threshold:
+                similar_words.append((word, score))
     
-    return similar_words[:15]  # Limit to top 15
+    # Sort by score and return words only
+    similar_words.sort(key=lambda x: x[1], reverse=True)
+    return [word for word, score in similar_words[:15]]  # Limit to top 15
 
 def find_similar_words(target_word, semantic_model, documents, threshold=0.7, method='semantic'):
     """Find similar words using the specified method"""
@@ -409,6 +457,9 @@ def count_word_frequencies(text, word_list, semantic_model=None, documents=None,
                     continue
     
     return frequencies
+
+# [The rest of the functions remain exactly the same as in the previous version]
+# generate_pdf_report, generate_excel_report, and main function remain unchanged
 
 def generate_pdf_report(summary_data, file_analysis_data, word_counts, target_words, include_arabic=True):
     """Generate professional PDF report in memory with optional Arabic version"""
@@ -1033,10 +1084,10 @@ def main():
                     
                     if training_texts:
                         semantic_model = create_semantic_model(training_texts)
-                        if not semantic_model:
-                            st.warning("Semantic model creation failed. Using context-based synonym detection.")
+                        if semantic_model:
+                            st.success(f"✓ Semantic model created with {semantic_model['num_docs']} documents and {len(semantic_model['feature_names'])} features")
                         else:
-                            st.info("Using TF-IDF based semantic analysis for synonym detection")
+                            st.warning("Semantic model creation failed. Using context-based synonym detection.")
                     else:
                         st.warning("No valid text for semantic analysis. Using context-based synonym detection.")
                     progress_bar.progress((total_files + 1) / (total_files * 3 + 2))
